@@ -80,7 +80,7 @@ elif(exp_name in ['dl_21', 'dl_22']):
 else:
     tgt_dataset_doc_index = pt.IndexFactory.of(f'./doc_indices/{exp_name}')
 
-bm25_doc_pipeline = pt.rewrite.tokenise() >> pt.terrier.Retriever(tgt_dataset_doc_index, wmodel="BM25", verbose=True, num_results=20) % 20 >> tgt_dataset_doc_index.text_loader(["text"]) >> pt.rewrite.reset() # we only need top-20 for RBO
+bm25_doc_pipeline = pt.rewrite.tokenise() >> pt.terrier.Retriever(tgt_dataset_doc_index, wmodel="BM25", verbose=True, num_results=20) % 20 >> pt.rewrite.reset() # we only need top-20 docnos/scores for RBO; no text needed
 
 print('[progress] Finished preparation.')
 
