@@ -25,8 +25,11 @@ if __name__=="__main__":
     parser.add_argument("--q_retriever", type=str, default='bm25', choices=['bm25', 'sbert', 'dragon', 'tct', 'dragon_qasd', 'tct_qasd'])
     parser.add_argument("--hop_num", type=int, default=1, choices=[1, 2])
     parser.add_argument("--p", type=int, default=1)
+    parser.add_argument("--doc_index_path", type=str, default=None,
+                         help="Optional path to a prebuilt Terrier index of the target corpus, overriding the "
+                              "hardcoded default paths (which assume a specific server layout).")
     args = parser.parse_args()
-    
+
     dataset = args.dataset_name
     q_rtr = args.q_retriever
     hop_num = args.hop_num
@@ -46,7 +49,9 @@ if __name__=="__main__":
     orig_res_df.docno = orig_res_df.docno.astype('str')
     orig_res_df.qid = orig_res_df.qid.astype('str')
 
-    if(dataset in ['dl_19', 'dl_20']):
+    if args.doc_index_path is not None:
+        index_path = args.doc_index_path
+    elif(dataset in ['dl_19', 'dl_20']):
         index_path = '/doc_indices/msmarco-passage.terrier/'
     elif(dataset in ['dl_21', 'dl_22']):
         index_path = '/doc_indices/msmarco-passage-v2-dedup.terrier'

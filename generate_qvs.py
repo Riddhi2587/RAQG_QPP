@@ -19,12 +19,14 @@ from pathlib import Path
 import argparse
 import re
 
-def load_llama():
-    cwd = os.getcwd()
-    parent = os.path.dirname(cwd)
-    print(parent)
+def load_llama(model_path=None):
+    if model_path is None:
+        cwd = os.getcwd()
+        parent = os.path.dirname(cwd)
+        model_path = os.path.join(parent, 'gguf_storage', 'Meta-Llama-3-8B-Instruct.Q8_0.gguf')
+    print(model_path)
     llm = Llama(
-        model_path=os.path.join(parent, 'gguf_storage', 'Meta-Llama-3-8B-Instruct.Q8_0.gguf'),
+        model_path=model_path,
         logits_all=False,
         verbose=False,
         n_gpu_layers=-1, # Uncomment to use GPU acceleration
@@ -127,8 +129,11 @@ if __name__=="__main__":
     parser.add_argument("--q_retriever", type=str, default='bm25', choices=['bm25', 'sbert', 'dragon', 'tct', 'dragon_qasd', 'tct_qasd'])
     parser.add_argument("--hop_num", type=int, default=1, choices=[1, 2])
     parser.add_argument("--p", type=int, default=0)
+    parser.add_argument("--model_path", type=str, default=None,
+                         help="Path to the GGUF model file. Defaults to "
+                              "<parent-of-cwd>/gguf_storage/Meta-Llama-3-8B-Instruct.Q8_0.gguf if not given.")
     args = parser.parse_args()
-    
+
     dataset_name = args.dataset_name
     q_retriever = args.q_retriever
     hop_num = args.hop_num
@@ -141,7 +146,7 @@ if __name__=="__main__":
             }
 
     print('loading llm')
-    llm = load_llama()
+    llm = load_llama(args.model_path)
     print('loading queries')
     queries = prepare_data(dataset_name)
 
@@ -152,7 +157,9 @@ if __name__=="__main__":
         qv_df.qid = qv_df.qid.astype('str')
 
     print(f'[now at] {dataset_name} {q_retriever} {hop_num}hop {p}')
-    
+
+    os.makedirs('./gen_qv_res', exist_ok=True)
+
     if(p == 0):
         output_dir = f'./gen_qv_res/{dataset_name}_0shot_qvs'
         path = Path(f'{output_dir}.json')
@@ -162,7 +169,7 @@ if __name__=="__main__":
         else:
             pass
 
-        queries[['gen_qvs', 'success_generated']] = queries['query'].apply(pd.Series(gen_0shot_qv))
+        queries[['gen_qvs', 'success_generated']] = queries['query'].apply(lambda x: pd.Series(gen_0shot_qv(x)))
         queries.to_csv(f'{output_dir}.csv', index=False)
 
         qv_total_dict = {}
