@@ -1,14 +1,12 @@
 ################################
-# Generated QVs using Llama ####
-# Needs to download GGUF files #
-# and put them under a director#
-#called gguf_storage outside ###
-# working directory. ###########
+# Generated QVs using an LLM ###
+# Backends: Gemini 2.5 Flash ###
+# (via API) or a local Llama ###
+# GGUF file. ####################
 # The results are NOT re-ranked#
 # by RBO. ######################
 ################################
 
-from llama_cpp import Llama
 import pyterrier as pt
 import json, json5
 import pandas as pd
@@ -16,10 +14,18 @@ import sys
 import os
 from itertools import product
 from pathlib import Path
+from typing import List
 import argparse
 import re
 
+from pydantic import BaseModel
+
+class ReformulatedQueries(BaseModel):
+    reformulations: List[str]
+
 def load_llama(model_path=None):
+    from llama_cpp import Llama
+
     if model_path is None:
         cwd = os.getcwd()
         parent = os.path.dirname(cwd)
@@ -34,6 +40,22 @@ def load_llama(model_path=None):
     )
     llm.set_seed(1000)
     return llm
+
+def load_gemini(api_key=None):
+    from google import genai
+
+    return genai.Client(api_key=api_key) if api_key else genai.Client()
+
+def gemini_call(client, model, prompt, temperature=0.3):
+    return client.models.generate_content(
+        model=model,
+        contents=prompt,
+        config={
+            "response_mime_type": "application/json",
+            "response_schema": ReformulatedQueries,
+            "temperature": temperature,
+        },
+    )
 
 def llama_call(llm, prompt, temperature):
       
@@ -118,6 +140,41 @@ def gen_0shot_qv(qText: str):
         print('[debug]', output['choices'][0]['text'])
     return generated_qvs, success
 
+def construct_0shot_prompt_gemini(qText):
+    return (
+        "You are an experienced searcher. Reformulate the following query in 10 different ways so the "
+        "reformulated queries have similar (either more specific or more generic) information needs as "
+        "the original one.\n\n"
+        f"Query: {qText}"
+    )
+
+def construct_kshot_prompt_gemini(qText, examples):
+    return (
+        "You are an experienced searcher. Reformulate the following query in 10 different ways so the "
+        "reformulated queries have similar (either more specific or more generic) information needs as "
+        "the original one. Reference the provided examples of real-life queries while reformulating.\n\n"
+        f"Query: {qText}\n\n"
+        f"Example real-life queries:\n{examples}"
+    )
+
+def gen_kshot_qv_gemini(client, model, qid: str, qText: str, _qv_df, _k):
+    prompt = construct_kshot_prompt_gemini(qText, get_examples(qid, _qv_df, _k))
+    response = gemini_call(client, model, prompt)
+    if response.parsed is not None:
+        generated_qvs = {f'Q_{i}': q for i, q in enumerate(response.parsed.reformulations)}
+        return generated_qvs, True
+    print("No parsed output from Gemini:", response.text)
+    return response.text, False
+
+def gen_0shot_qv_gemini(client, model, qText: str):
+    prompt = construct_0shot_prompt_gemini(qText)
+    response = gemini_call(client, model, prompt)
+    if response.parsed is not None:
+        generated_qvs = {f'Q_{i}': q for i, q in enumerate(response.parsed.reformulations)}
+        return generated_qvs, True
+    print("No parsed output from Gemini:", response.text)
+    return response.text, False
+
 def update_json_result_file(file_name, result_to_write):
     f = open(file_name, "w+", encoding='UTF-8')
     json.dump(result_to_write, f, indent=4)
@@ -129,9 +186,14 @@ if __name__=="__main__":
     parser.add_argument("--q_retriever", type=str, default='bm25', choices=['bm25', 'sbert', 'dragon', 'tct', 'dragon_qasd', 'tct_qasd'])
     parser.add_argument("--hop_num", type=int, default=1, choices=[1, 2])
     parser.add_argument("--p", type=int, default=0)
+    parser.add_argument("--backend", type=str, default='gemini', choices=['gemini', 'llama'])
     parser.add_argument("--model_path", type=str, default=None,
-                         help="Path to the GGUF model file. Defaults to "
+                         help="[llama backend] Path to the GGUF model file. Defaults to "
                               "<parent-of-cwd>/gguf_storage/Meta-Llama-3-8B-Instruct.Q8_0.gguf if not given.")
+    parser.add_argument("--gemini_api_key", type=str, default=None,
+                         help="[gemini backend] API key. Defaults to the GEMINI_API_KEY/GOOGLE_API_KEY "
+                              "env var if not given.")
+    parser.add_argument("--gemini_model", type=str, default='gemini-2.5-flash')
     args = parser.parse_args()
 
     dataset_name = args.dataset_name
@@ -145,8 +207,12 @@ if __name__=="__main__":
              'trec_covid': {'path': 'irds:beir/trec-covid', 'meta': {'docno': 64, 'title': 100, 'text': 4096}},
             }
 
-    print('loading llm')
-    llm = load_llama(args.model_path)
+    print(f'loading backend: {args.backend}')
+    if args.backend == 'gemini':
+        gemini_client = load_gemini(args.gemini_api_key)
+        gemini_model = args.gemini_model
+    else:
+        llm = load_llama(args.model_path)
     print('loading queries')
     queries = prepare_data(dataset_name)
 
@@ -169,7 +235,11 @@ if __name__=="__main__":
         else:
             pass
 
-        queries[['gen_qvs', 'success_generated']] = queries['query'].apply(lambda x: pd.Series(gen_0shot_qv(x)))
+        if args.backend == 'gemini':
+            queries[['gen_qvs', 'success_generated']] = queries['query'].apply(
+                lambda x: pd.Series(gen_0shot_qv_gemini(gemini_client, gemini_model, x)))
+        else:
+            queries[['gen_qvs', 'success_generated']] = queries['query'].apply(lambda x: pd.Series(gen_0shot_qv(x)))
         queries.to_csv(f'{output_dir}.csv', index=False)
 
         qv_total_dict = {}
@@ -190,7 +260,11 @@ if __name__=="__main__":
         else:
             pass
         
-        queries[['gen_qvs', 'success_generated']] = queries.apply(lambda x: pd.Series(gen_kshot_qv(x['qid'], x['query'], qv_df, p)), axis=1)
+        if args.backend == 'gemini':
+            queries[['gen_qvs', 'success_generated']] = queries.apply(
+                lambda x: pd.Series(gen_kshot_qv_gemini(gemini_client, gemini_model, x['qid'], x['query'], qv_df, p)), axis=1)
+        else:
+            queries[['gen_qvs', 'success_generated']] = queries.apply(lambda x: pd.Series(gen_kshot_qv(x['qid'], x['query'], qv_df, p)), axis=1)
         queries.to_csv(f'{output_dir}.csv', index=False)
             
         qv_total_dict = {}
