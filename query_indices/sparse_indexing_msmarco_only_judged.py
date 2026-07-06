@@ -1,4 +1,5 @@
 import pyterrier as pt
+from pyterrier.utils import GeneratorLen
 
 msmarco_dataset = pt.get_dataset('irds:msmarco-passage/train')
 training_qrel = msmarco_dataset.get_qrels()
