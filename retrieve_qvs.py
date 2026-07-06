@@ -42,6 +42,13 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--dataset_name", type=str, default='dl_19', choices=list(path_dict.keys()))
 parser.add_argument("--q_retriever", type=str, default='bm25', choices=['bm25', 'sbert', 'dragon', 'tct', 'dragon_qasd', 'tct_qasd'])
 parser.add_argument("--hop_num", type=int, default=1, choices=[1, 2])
+parser.add_argument("--queries_path", type=str, default=None,
+                     help="Optional path to a local queries source, overriding automatic ir_datasets topic "
+                          "lookup for --dataset_name. Accepts either a runfile CSV with 'qid'/'query' columns "
+                          "(e.g. ./res/dl_19_bm25.csv) or a plain TSV of 'qid<TAB>query text' with no header.")
+parser.add_argument("--doc_index_path", type=str, default=None,
+                     help="Optional path to a prebuilt Terrier index of the target corpus, overriding the "
+                          "hardcoded default paths (which assume a specific server layout).")
 args = parser.parse_args()
 
 exp_name = args.dataset_name
@@ -51,10 +58,22 @@ hop_num = args.hop_num
 print(f"[progress] We are doing {hop_num}_hop QV retrieval with {q_retriever} as query retriever for {exp_name} queries.")
 
 # loading queries, corresponding indices, and bm25 doc retrieval pipeline
-test_queries = pt.get_dataset(path_dict[exp_name]).get_topics('text')
+if args.queries_path is not None:
+    with open(args.queries_path) as f:
+        first_line = f.readline()
+    if 'qid' in first_line and 'query' in first_line:
+        # a runfile-style CSV (has a header with qid/query columns, e.g. ./res/dl_19_bm25.csv)
+        test_queries = pd.read_csv(args.queries_path, dtype={'qid': str})[['qid', 'query']].drop_duplicates()
+    else:
+        # a plain headerless TSV of qid<TAB>query text
+        test_queries = pd.read_csv(args.queries_path, sep='\t', header=None, names=['qid', 'query'], dtype=str)
+else:
+    test_queries = pt.get_dataset(path_dict[exp_name]).get_topics('text')
 msmarco_dataset = pt.get_dataset('irds:msmarco-passage/train')
 
-if(exp_name in ['dl_19', 'dl_20']):
+if args.doc_index_path is not None:
+    tgt_dataset_doc_index = pt.IndexFactory.of(args.doc_index_path)
+elif(exp_name in ['dl_19', 'dl_20']):
     tgt_dataset_doc_index = pt.IndexFactory.of('/doc_indices/msmarco-passage.terrier/')
 elif(exp_name in ['dl_21', 'dl_22']):
     tgt_dataset_doc_index = pt.IndexFactory.of('/doc_indices/msmarco-passage-v2-dedup.terrier')
