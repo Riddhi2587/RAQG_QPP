@@ -33,8 +33,8 @@ if __name__ == "__main__":
 
     if index_path is None:
         dataset = pt.get_dataset("irds:msmarco-passage")
-        indexer = pt.IterDictIndexer(args.out_path, meta={"docno": 20, "text": 4096})
-        indexer.index(dataset.get_corpus_iter(), fields=["text"])
+        indexer = pt.IterDictIndexer(args.out_path, meta={"docno": 20, "text": 4096}, text_attrs=["text"])
+        indexer.index(dataset.get_corpus_iter())
         index_path = args.out_path
         print(f"[progress] Index built at {index_path}")
 
