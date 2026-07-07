@@ -12,6 +12,7 @@ import json, json5
 import pandas as pd
 import sys
 import os
+import time
 from itertools import product
 from pathlib import Path
 from typing import List
@@ -46,16 +47,38 @@ def load_gemini(api_key=None):
 
     return genai.Client(api_key=api_key) if api_key else genai.Client()
 
-def gemini_call(client, model, prompt, temperature=0.3):
-    return client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config={
-            "response_mime_type": "application/json",
-            "response_schema": ReformulatedQueries,
-            "temperature": temperature,
-        },
-    )
+def _rate_limit_retry_delay(exc):
+    try:
+        for d in exc.details.get('error', {}).get('details', []):
+            if d.get('@type', '').endswith('RetryInfo'):
+                delay_str = d.get('retryDelay', '')
+                if delay_str.endswith('s'):
+                    return float(delay_str[:-1])
+    except Exception:
+        pass
+    return None
+
+def gemini_call(client, model, prompt, temperature=0.3, max_retries=20):
+    from google.genai import errors as genai_errors
+
+    for attempt in range(max_retries):
+        try:
+            return client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config={
+                    "response_mime_type": "application/json",
+                    "response_schema": ReformulatedQueries,
+                    "temperature": temperature,
+                },
+            )
+        except genai_errors.ClientError as e:
+            if e.code == 429 and attempt < max_retries - 1:
+                delay = _rate_limit_retry_delay(e) or min(60, 2 ** attempt)
+                print(f'[rate limited] attempt {attempt + 1}/{max_retries}, retrying in {delay:.1f}s...')
+                time.sleep(delay + 1)  # small buffer past the server's suggested delay
+            else:
+                raise
 
 def llama_call(llm, prompt, temperature):
       
