@@ -8,7 +8,7 @@
 ################################
 
 import pyterrier as pt
-import json, json5
+import json
 import pandas as pd
 import sys
 import os
@@ -111,6 +111,7 @@ def get_examples(_qid, _qv_df, _k):
     return qv_examples
 
 def gen_kshot_qv(qid:str, qText:str, _qv_df, _k):
+    import json5
 
     output = llama_call(llm, construct_kshot_prompt(qText, get_examples(qid, _qv_df, _k)), temperature=0.3)
     output_text = output['choices'][0]['text']
@@ -140,7 +141,7 @@ def construct_0shot_prompt(qText):
     preamble += "End your answer after the reformulation immediately with </response>\n"
     postamble = "<response>"
     
-    return f'{preamble}\n<query>{qText}<\query>\n{postamble}\n'
+    return f'{preamble}\n<query>{qText}</query>\n{postamble}\n'
 
 def construct_kshot_prompt(qText, examples):
     preamble = "You are an experienced searcher. Please reformulate the following query in 10 different ways so the reformulated queries hava similar (either more specific or more generic) information needs as the original one. "
@@ -149,11 +150,12 @@ def construct_kshot_prompt(qText, examples):
     preamble += "End your answer after the reformulation immediately with </response>\n"
     postamble = "<response>"
 
-    print('[debug]', f'{preamble}\n<query>{qText}<\query>\n<example_queries>\n{examples}<\example_queries>\n{postamble}\n')
+    print('[debug]', f'{preamble}\n<query>{qText}</query>\n<example_queries>\n{examples}</example_queries>\n{postamble}\n')
     
-    return f'{preamble}\n<query>{qText}<\query>\n<example_queries>\n{examples}<\example_queries>\n{postamble}\n'
+    return f'{preamble}\n<query>{qText}</query>\n<example_queries>\n{examples}</example_queries>\n{postamble}\n'
 
 def gen_0shot_qv(qText: str):
+    import json5
 
     output = llama_call(llm, construct_0shot_prompt(qText), temperature=0.3)
     try:
