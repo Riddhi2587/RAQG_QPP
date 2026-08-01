@@ -35,7 +35,7 @@ if __name__=="__main__":
     hop_num = args.hop_num
     p = args.p
 
-    output_dir = f'./qv_res/reranked_{dataset}_{p}shot_{q_rtr}_{hop_num}hop.csv'
+    output_dir = f'./qv_res/reranked_{dataset}_{p}shot_{q_rtr}_{hop_num}hop_genspec.csv'
     if Path(output_dir).exists():
         print("File exists", output_dir)
         raise RuntimeError("don't need to continue")
@@ -68,8 +68,8 @@ if __name__=="__main__":
     
     # >> dataset_obj.text_loader(["text"])
 
-    print("Reading QVs", f'./gen_qv_res/{dataset}_{p}shot_{hop_num}hop_{q_rtr}_qvs.json')
-    with open(f'./gen_qv_res/{dataset}_{p}shot_{hop_num}hop_{q_rtr}_qvs.json') as f:
+    print("Reading QVs", f'./gen_qv_res/{dataset}_{p}shot_{hop_num}hop_{q_rtr}_genspec_qvs.json')
+    with open(f'./gen_qv_res/{dataset}_{p}shot_{hop_num}hop_{q_rtr}_genspec_qvs.json') as f:
         unranked_qvs = json.load(f)
 
     print("converting to csv")

@@ -298,7 +298,7 @@ if __name__=="__main__":
     os.makedirs('./gen_qv_res', exist_ok=True)
 
     if(p == 0):
-        output_dir = f'./gen_qv_res/{dataset_name}_0shot_qvs'
+        output_dir = f'./gen_qv_res/{dataset_name}_0shot_genspec_qvs'
         path = Path(f'{output_dir}.json')
         if path.exists():
             print("File exists")
@@ -326,7 +326,7 @@ if __name__=="__main__":
             json.dump(qv_total_dict, f)
             
     else:
-        output_dir = f'./gen_qv_res/{dataset_name}_{p}shot_{hop_num}hop_{q_retriever}_qvs'
+        output_dir = f'./gen_qv_res/{dataset_name}_{p}shot_{hop_num}hop_{q_retriever}_genspec_qvs'
         path = Path(f'{output_dir}.json')
         if path.exists():
             print("File exists")
