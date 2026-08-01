@@ -78,11 +78,14 @@ if __name__=="__main__":
         # print(qid)
         qText = details['query']
         # print(qid, qText)
-        for i, (_, qv_details) in enumerate(details['gen_qvs'].items()):
-            qvs_res_content.append([qid, qText, f'{qid}_gen{i}', qv_details])
+        for i, (key, qv_details) in enumerate(details['gen_qvs'].items()):
+            key_suffix = key.rsplit('_', 1)[-1]
+            specificity = key_suffix if key_suffix in ('generic', 'specific') else None
+            qvs_res_content.append([qid, qText, f'{qid}_gen{i}', qv_details, specificity])
 
     # print('[debug]--point 0')
-    qvs_res = pd.DataFrame(qvs_res_content, columns=['qid', 'qText', 'rqid', 'rqText'])
+    qvs_res = pd.DataFrame(qvs_res_content, columns=['qid', 'qText', 'rqid', 'rqText', 'specificity'])
+    rqid_to_specificity = dict(zip(qvs_res['rqid'], qvs_res['specificity']))
     print('[debug] start retrieving')
     qvs_rtr_res = 0
     for i in tqdm(range(0, qvs_res.shape[0], 5)):
@@ -112,9 +115,10 @@ if __name__=="__main__":
     
             rqText = res_11['query'].values[0]
             rbo_value = pta.rbo(res_0[res_0['rank']<20], res_11[res_11['rank']<20])
-            qvs_rbo_rerank_df_content.append([qid, qText, rqid, rqText, list(rbo_value)[0][1]])
-    
-    qvs_rbo_rerank_df = pd.DataFrame(qvs_rbo_rerank_df_content, columns=['qid', 'qText', 'rqid', 'rqText', 'score'])
+            specificity = rqid_to_specificity.get(rqid)
+            qvs_rbo_rerank_df_content.append([qid, qText, rqid, rqText, list(rbo_value)[0][1], specificity])
+
+    qvs_rbo_rerank_df = pd.DataFrame(qvs_rbo_rerank_df_content, columns=['qid', 'qText', 'rqid', 'rqText', 'score', 'specificity'])
     qvs_rbo_rerank_df = add_ranks(qvs_rbo_rerank_df)
     qvs_rbo_rerank_df = qvs_rbo_rerank_df[qvs_rbo_rerank_df['rank']<10]
     qvs_rbo_rerank_df.to_csv(output_dir, index=False)
