@@ -15,14 +15,18 @@ import os
 import time
 from itertools import product
 from pathlib import Path
-from typing import List
+from typing import List, Literal
 import argparse
 import re
 
 from pydantic import BaseModel
 
+class ReformulatedQuery(BaseModel):
+    query: str
+    specificity: Literal['generic', 'specific']
+
 class ReformulatedQueries(BaseModel):
-    reformulations: List[str]
+    reformulations: List[ReformulatedQuery]
 
 def load_llama(model_path=None):
     from llama_cpp import Llama
@@ -180,17 +184,22 @@ def gen_0shot_qv(qText: str):
 
 def construct_0shot_prompt_structured(qText):
     return (
-        "You are an experienced searcher. Reformulate the following query in 10 different ways so the "
-        "reformulated queries have similar (either more specific or more generic) information needs as "
-        "the original one.\n\n"
+        "You are an experienced searcher. Reformulate the following query in 10 different ways: "
+        "5 that are more generic (a broader information need than the original) and 5 that are more "
+        "specific (a narrower, more detailed information need than the original). All 10 must stay "
+        "related to the same underlying topic as the original query. For each reformulation, label "
+        "its specificity as either 'generic' or 'specific'.\n\n"
         f"Query: {qText}"
     )
 
 def construct_kshot_prompt_structured(qText, examples):
     return (
-        "You are an experienced searcher. Reformulate the following query in 10 different ways so the "
-        "reformulated queries have similar (either more specific or more generic) information needs as "
-        "the original one. Reference the provided examples of real-life queries while reformulating.\n\n"
+        "You are an experienced searcher. Reformulate the following query in 10 different ways: "
+        "5 that are more generic (a broader information need than the original) and 5 that are more "
+        "specific (a narrower, more detailed information need than the original). All 10 must stay "
+        "related to the same underlying topic as the original query. For each reformulation, label "
+        "its specificity as either 'generic' or 'specific'. Reference the provided examples of "
+        "real-life queries while reformulating.\n\n"
         f"Query: {qText}\n\n"
         f"Example real-life queries:\n{examples}"
     )
@@ -199,7 +208,7 @@ def gen_kshot_qv_gemini(client, model, qid: str, qText: str, _qv_df, _k):
     prompt = construct_kshot_prompt_structured(qText, get_examples(qid, _qv_df, _k))
     response = gemini_call(client, model, prompt)
     if response.parsed is not None:
-        generated_qvs = {f'Q_{i}': q for i, q in enumerate(response.parsed.reformulations)}
+        generated_qvs = {f'Q_{i}_{item.specificity}': item.query for i, item in enumerate(response.parsed.reformulations)}
         return generated_qvs, True
     print("No parsed output from Gemini:", response.text)
     return response.text, False
@@ -208,7 +217,7 @@ def gen_0shot_qv_gemini(client, model, qText: str):
     prompt = construct_0shot_prompt_structured(qText)
     response = gemini_call(client, model, prompt)
     if response.parsed is not None:
-        generated_qvs = {f'Q_{i}': q for i, q in enumerate(response.parsed.reformulations)}
+        generated_qvs = {f'Q_{i}_{item.specificity}': item.query for i, item in enumerate(response.parsed.reformulations)}
         return generated_qvs, True
     print("No parsed output from Gemini:", response.text)
     return response.text, False
@@ -217,7 +226,7 @@ def gen_kshot_qv_openai(client, model, qid: str, qText: str, _qv_df, _k):
     prompt = construct_kshot_prompt_structured(qText, get_examples(qid, _qv_df, _k))
     response = openai_call(client, model, prompt)
     if response.output_parsed is not None:
-        generated_qvs = {f'Q_{i}': q for i, q in enumerate(response.output_parsed.reformulations)}
+        generated_qvs = {f'Q_{i}_{item.specificity}': item.query for i, item in enumerate(response.output_parsed.reformulations)}
         return generated_qvs, True
     print("No parsed output from OpenAI:", response.output_text)
     return response.output_text, False
@@ -226,7 +235,7 @@ def gen_0shot_qv_openai(client, model, qText: str):
     prompt = construct_0shot_prompt_structured(qText)
     response = openai_call(client, model, prompt)
     if response.output_parsed is not None:
-        generated_qvs = {f'Q_{i}': q for i, q in enumerate(response.output_parsed.reformulations)}
+        generated_qvs = {f'Q_{i}_{item.specificity}': item.query for i, item in enumerate(response.output_parsed.reformulations)}
         return generated_qvs, True
     print("No parsed output from OpenAI:", response.output_text)
     return response.output_text, False
