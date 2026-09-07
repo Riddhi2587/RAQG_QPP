@@ -11,17 +11,11 @@ import argparse
 from pathlib import Path
 from tqdm import tqdm
 
-info_dict = {'webis-touche2020': {'path': 'irds:beir/webis-touche2020/v2', 'meta': {'docno': 64, 'title': 100, 'text': 4096, 'url': 256, 'stance':16}},
-             'trec_covid': {'path': 'irds:beir/trec-covid', 'meta': {'docno': 64, 'title': 100, 'text': 4096}},
-             'dl_19': {'path': "irds:msmarco-passage/trec-dl-2019/judged", 'meta': {'docno': 64, 'title': 100, 'text': 4096}},
-             'dl_20': {'path': "irds:msmarco-passage/trec-dl-2020/judged", 'meta': {'docno': 64, 'title': 100, 'text': 4096}},
-             'dl_21': {'path': 'irds:msmarco-passage-v2/trec-dl-2021/judged', 'meta': {'docno': 64, 'title': 100, 'text': 4096}},
-             'dl_22': {'path': 'irds:msmarco-passage-v2/trec-dl-2022/judged', 'meta': {'docno': 64, 'title': 100, 'text': 4096}},
-            }
-
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset_name", type=str, default='dl_19', choices=['dl_19', 'dl_20', 'dl_21', 'dl_22', 'webis-touche2020', 'trec_covid'])
+    parser.add_argument("--dataset_name", type=str, default='dl_19',
+                         help="Dataset key used for output filenames; must match the --dataset_name used "
+                              "for the earlier retrieve_qvs.py/generate_qvs.py runs.")
     parser.add_argument("--q_retriever", type=str, default='bm25', choices=['bm25', 'sbert', 'dragon', 'tct', 'dragon_qasd', 'tct_qasd'])
     parser.add_argument("--hop_num", type=int, default=1, choices=[1, 2])
     parser.add_argument("--p", type=int, default=1)
@@ -43,8 +37,6 @@ if __name__=="__main__":
         print("Starting....")
         pass
     
-    dataset_obj = pt.get_dataset(info_dict[dataset]['path'])
-    
     orig_res_df = pd.read_csv(f'./res/{dataset}_bm25.csv')
     orig_res_df.docno = orig_res_df.docno.astype('str')
     orig_res_df.qid = orig_res_df.qid.astype('str')
@@ -64,7 +56,7 @@ if __name__=="__main__":
     # bm25_pipeline = pt.rewrite.tokenise() >> pt.terrier.Retriever(index_ref, wmodel="BM25") % 20
     
     sparse_index = pt.IndexFactory.of(index_path)
-    bm25_pipeline = pt.rewrite.tokenise() >> pt.terrier.Retriever(sparse_index, wmodel="BM25") % 20 >> pt.rewrite.reset()
+    bm25_pipeline = pt.rewrite.tokenise() >> pt.terrier.Retriever(sparse_index, wmodel="BM25", controls={'bm25.k_1': '0.9', 'bm25.b': '0.4'}) % 20 >> pt.rewrite.reset()
     
     # >> dataset_obj.text_loader(["text"])
 

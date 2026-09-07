@@ -16,6 +16,7 @@ from tqdm import tqdm
 import time
 import argparse
 import sys
+import os
 
 path_dict = {'webis-touche2020': 'irds:beir/webis-touche2020/v2',
              'trec_covid': 'irds:beir/trec-covid',
@@ -39,7 +40,9 @@ def transform_qv_df(_res):
 #########
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--dataset_name", type=str, default='dl_19', choices=list(path_dict.keys()))
+parser.add_argument("--dataset_name", type=str, default='dl_19',
+                     help="Dataset key used for output filenames. If not one of the built-in keys "
+                          f"({list(path_dict.keys())}), --queries_path must be given.")
 parser.add_argument("--q_retriever", type=str, default='bm25', choices=['bm25', 'sbert', 'dragon', 'tct', 'dragon_qasd', 'tct_qasd'])
 parser.add_argument("--hop_num", type=int, default=1, choices=[1, 2])
 parser.add_argument("--queries_path", type=str, default=None,
@@ -80,7 +83,7 @@ elif(exp_name in ['dl_21', 'dl_22']):
 else:
     tgt_dataset_doc_index = pt.IndexFactory.of(f'./doc_indices/{exp_name}')
 
-bm25_doc_pipeline = pt.rewrite.tokenise() >> pt.terrier.Retriever(tgt_dataset_doc_index, wmodel="BM25", verbose=True, num_results=20) % 20 >> pt.rewrite.reset() # we only need top-20 docnos/scores for RBO; no text needed
+bm25_doc_pipeline = pt.rewrite.tokenise() >> pt.terrier.Retriever(tgt_dataset_doc_index, wmodel="BM25", verbose=True, num_results=20, controls={'bm25.k_1': '0.9', 'bm25.b': '0.4'}) % 20 >> pt.rewrite.reset() # we only need top-20 docnos/scores for RBO; no text needed
 
 print('[progress] Finished preparation.')
 
@@ -118,6 +121,14 @@ if(hop_num == 2):
 
 # retrieve documents for test queries and qvs
 orig_res_df = bm25_doc_pipeline(test_queries)
+
+# persist the original-query BM25 run so rerank_gen_qv.py can use it later for RBO comparison;
+# skip if it already exists so the tracked dl_19/dl_20 runfiles are never overwritten
+os.makedirs('./res', exist_ok=True)
+_orig_res_path = f'./res/{exp_name}_bm25.csv'
+if not os.path.exists(_orig_res_path):
+    orig_res_df.to_csv(_orig_res_path, index=False)
+
 qvs_res_df = bm25_doc_pipeline(qvs[['rqid', 'rqText']].rename(columns={'rqText': 'query', 'rqid': 'qid'}))
 
 qvs_res_df['orig_qid'] = qvs_res_df['qid'].apply(lambda x: x.split('_')[0])

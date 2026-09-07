@@ -10,7 +10,7 @@ sparse_index = pt.IndexFactory.of(f'./query_indices/sparse')
 
 # bm25 qv retriever
 def get_bm25_q_retriever():
-    bm25_query_pipeline = pt.rewrite.tokenise() >> pt.terrier.Retriever(sparse_index, wmodel="BM25", num_results=10) >> sparse_index.text_loader(["text"]) >> pt.rewrite.reset()
+    bm25_query_pipeline = pt.rewrite.tokenise() >> pt.terrier.Retriever(sparse_index, wmodel="BM25", num_results=10, controls={'bm25.k_1': '0.9', 'bm25.b': '0.4'}) >> sparse_index.text_loader(["text"]) >> pt.rewrite.reset()
     return bm25_query_pipeline
 
 # sbert qv retriever

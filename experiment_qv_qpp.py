@@ -60,7 +60,7 @@ if __name__=="__main__":
     
     index_ref = pt.terrier.TerrierIndex(index_path).index_ref()
     sparse_index = pt.IndexFactory.of(index_ref, memory=['inverted', 'lexicon'])
-    bm25_pipeline = pt.terrier.Retriever(index_ref, wmodel="BM25") % 100
+    bm25_pipeline = pt.terrier.Retriever(index_ref, wmodel="BM25", controls={'bm25.k_1': '0.9', 'bm25.b': '0.4'}) % 100
     
     if(p < 0):
         qv_df = pd.read_csv(f'./qv_res/reranked_{dataset}_{q_rtr}_{hop_num}.csv')

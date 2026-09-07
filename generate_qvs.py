@@ -111,12 +111,20 @@ def llama_call(llm, prompt, temperature):
       
       return output
 
-def prepare_data(_dataset_name: str):
+def prepare_data(_dataset_name: str, queries_path: str = None):
 
-    
+    if queries_path is not None:
+        with open(queries_path) as f:
+            first_line = f.readline()
+        if 'qid' in first_line and 'query' in first_line:
+            # a runfile-style CSV (has a header with qid/query columns, e.g. ./res/dl_19_bm25.csv)
+            return pd.read_csv(queries_path, dtype={'qid': str})[['qid', 'query']].drop_duplicates()
+        # a plain headerless TSV of qid<TAB>query text
+        return pd.read_csv(queries_path, sep='\t', header=None, names=['qid', 'query'], dtype=str)
+
     _dataset = pt.get_dataset(info_dict[_dataset_name]['path'])
     _queries = _dataset.get_topics('text')
-      
+
     return _queries
 
 def get_examples(_qid, _qv_df, _k):
@@ -192,7 +200,9 @@ def construct_0shot_prompt_structured(qText):
         f"Query: {qText}"
     )
 
-def construct_kshot_prompt_structured(qText, examples):
+def construct_kshot_prompt_structured(qText, examples, template=None):
+    if template is not None:
+        return template.format(query=qText, examples=examples)
     return (
         "You are an experienced searcher. Reformulate the following query in 10 different ways: "
         "5 that are more generic (a broader information need than the original) and 5 that are more "
@@ -204,8 +214,8 @@ def construct_kshot_prompt_structured(qText, examples):
         f"Example real-life queries:\n{examples}"
     )
 
-def gen_kshot_qv_gemini(client, model, qid: str, qText: str, _qv_df, _k):
-    prompt = construct_kshot_prompt_structured(qText, get_examples(qid, _qv_df, _k))
+def gen_kshot_qv_gemini(client, model, qid: str, qText: str, _qv_df, _k, prompt_template=None):
+    prompt = construct_kshot_prompt_structured(qText, get_examples(qid, _qv_df, _k), prompt_template)
     response = gemini_call(client, model, prompt)
     if response.parsed is not None:
         generated_qvs = {f'Q_{i}_{item.specificity}': item.query for i, item in enumerate(response.parsed.reformulations)}
@@ -222,8 +232,8 @@ def gen_0shot_qv_gemini(client, model, qText: str):
     print("No parsed output from Gemini:", response.text)
     return response.text, False
 
-def gen_kshot_qv_openai(client, model, qid: str, qText: str, _qv_df, _k):
-    prompt = construct_kshot_prompt_structured(qText, get_examples(qid, _qv_df, _k))
+def gen_kshot_qv_openai(client, model, qid: str, qText: str, _qv_df, _k, prompt_template=None):
+    prompt = construct_kshot_prompt_structured(qText, get_examples(qid, _qv_df, _k), prompt_template)
     response = openai_call(client, model, prompt)
     if response.output_parsed is not None:
         generated_qvs = {f'Q_{i}_{item.specificity}': item.query for i, item in enumerate(response.output_parsed.reformulations)}
@@ -247,10 +257,17 @@ def update_json_result_file(file_name, result_to_write):
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset_name", type=str, default='dl_19', choices=['dl_19', 'dl_20', 'dl_21', 'dl_22', 'webis-touche2020', 'trec_covid'])
+    parser.add_argument("--dataset_name", type=str, default='dl_19',
+                         help="Dataset key used for output filenames. If not one of the built-in keys "
+                              "(dl_19, dl_20, dl_21, dl_22, webis-touche2020, trec_covid), --queries_path "
+                              "must be given.")
     parser.add_argument("--q_retriever", type=str, default='bm25', choices=['bm25', 'sbert', 'dragon', 'tct', 'dragon_qasd', 'tct_qasd'])
     parser.add_argument("--hop_num", type=int, default=1, choices=[1, 2])
     parser.add_argument("--p", type=int, default=0)
+    parser.add_argument("--queries_path", type=str, default=None,
+                         help="Optional path to a local queries source, overriding automatic ir_datasets topic "
+                              "lookup for --dataset_name. Accepts either a runfile CSV with 'qid'/'query' columns "
+                              "(e.g. ./res/dl_19_bm25.csv) or a plain TSV of 'qid<TAB>query text' with no header.")
     parser.add_argument("--backend", type=str, default='gemini', choices=['gemini', 'openai', 'llama'])
     parser.add_argument("--model_path", type=str, default=None,
                          help="[llama backend] Path to the GGUF model file. Defaults to "
@@ -262,7 +279,16 @@ if __name__=="__main__":
     parser.add_argument("--openai_api_key", type=str, default=None,
                          help="[openai backend] API key. Defaults to the OPENAI_API_KEY env var if not given.")
     parser.add_argument("--openai_model", type=str, default='gpt-4.1-nano')
+    parser.add_argument("--prompt_template_file", type=str, default=None,
+                         help="[kshot, gemini/openai backends] Path to a text file containing a "
+                              "custom prompt template with '{query}' and '{examples}' placeholders. "
+                              "Defaults to the built-in prompt if not given.")
     args = parser.parse_args()
+
+    prompt_template = None
+    if args.prompt_template_file is not None:
+        with open(args.prompt_template_file, 'r', encoding='UTF-8') as f:
+            prompt_template = f.read()
 
     dataset_name = args.dataset_name
     q_retriever = args.q_retriever
@@ -285,7 +311,7 @@ if __name__=="__main__":
     else:
         llm = load_llama(args.model_path)
     print('loading queries')
-    queries = prepare_data(dataset_name)
+    queries = prepare_data(dataset_name, args.queries_path)
 
     if(p == 0):
         qv_df = 0
@@ -336,10 +362,10 @@ if __name__=="__main__":
         
         if args.backend == 'gemini':
             queries[['gen_qvs', 'success_generated']] = queries.apply(
-                lambda x: pd.Series(gen_kshot_qv_gemini(gemini_client, gemini_model, x['qid'], x['query'], qv_df, p)), axis=1)
+                lambda x: pd.Series(gen_kshot_qv_gemini(gemini_client, gemini_model, x['qid'], x['query'], qv_df, p, prompt_template)), axis=1)
         elif args.backend == 'openai':
             queries[['gen_qvs', 'success_generated']] = queries.apply(
-                lambda x: pd.Series(gen_kshot_qv_openai(openai_client, openai_model, x['qid'], x['query'], qv_df, p)), axis=1)
+                lambda x: pd.Series(gen_kshot_qv_openai(openai_client, openai_model, x['qid'], x['query'], qv_df, p, prompt_template)), axis=1)
         else:
             queries[['gen_qvs', 'success_generated']] = queries.apply(lambda x: pd.Series(gen_kshot_qv(x['qid'], x['query'], qv_df, p)), axis=1)
         queries.to_csv(f'{output_dir}.csv', index=False)
