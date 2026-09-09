@@ -15,18 +15,14 @@ import os
 import time
 from itertools import product
 from pathlib import Path
-from typing import List, Literal
+from typing import List
 import argparse
 import re
 
 from pydantic import BaseModel
 
-class ReformulatedQuery(BaseModel):
-    query: str
-    specificity: Literal['generic', 'specific']
-
 class ReformulatedQueries(BaseModel):
-    reformulations: List[ReformulatedQuery]
+    reformulations: List[str]
 
 def load_llama(model_path=None):
     from llama_cpp import Llama
@@ -192,11 +188,10 @@ def gen_0shot_qv(qText: str):
 
 def construct_0shot_prompt_structured(qText):
     return (
-        "You are an experienced searcher. Reformulate the following query in 10 different ways: "
-        "5 that are more generic (a broader information need than the original) and 5 that are more "
-        "specific (a narrower, more detailed information need than the original). All 10 must stay "
-        "related to the same underlying topic as the original query. For each reformulation, label "
-        "its specificity as either 'generic' or 'specific'.\n\n"
+        "You are an experienced searcher. Paraphrase the following query in 10 different ways, "
+        "preserving its exact information need, scope, and intent (do not make it broader or "
+        "narrower). Use different wording, phrasing, and/or synonyms than the original and than "
+        "each other.\n\n"
         f"Query: {qText}"
     )
 
@@ -204,12 +199,11 @@ def construct_kshot_prompt_structured(qText, examples, template=None):
     if template is not None:
         return template.format(query=qText, examples=examples)
     return (
-        "You are an experienced searcher. Reformulate the following query in 10 different ways: "
-        "5 that are more generic (a broader information need than the original) and 5 that are more "
-        "specific (a narrower, more detailed information need than the original). All 10 must stay "
-        "related to the same underlying topic as the original query. For each reformulation, label "
-        "its specificity as either 'generic' or 'specific'. Reference the provided examples of "
-        "real-life queries while reformulating.\n\n"
+        "You are an experienced searcher. Paraphrase the following query in 10 different ways, "
+        "preserving its exact information need, scope, and intent (do not make it broader or "
+        "narrower). Use different wording, phrasing, and/or synonyms than the original and than "
+        "each other. Reference the provided examples of real-life queries for tone and style "
+        "while paraphrasing.\n\n"
         f"Query: {qText}\n\n"
         f"Example real-life queries:\n{examples}"
     )
@@ -218,7 +212,7 @@ def gen_kshot_qv_gemini(client, model, qid: str, qText: str, _qv_df, _k, prompt_
     prompt = construct_kshot_prompt_structured(qText, get_examples(qid, _qv_df, _k), prompt_template)
     response = gemini_call(client, model, prompt)
     if response.parsed is not None:
-        generated_qvs = {f'Q_{i}_{item.specificity}': item.query for i, item in enumerate(response.parsed.reformulations)}
+        generated_qvs = {f'Q_{i}': q for i, q in enumerate(response.parsed.reformulations)}
         return generated_qvs, True
     print("No parsed output from Gemini:", response.text)
     return response.text, False
@@ -227,7 +221,7 @@ def gen_0shot_qv_gemini(client, model, qText: str):
     prompt = construct_0shot_prompt_structured(qText)
     response = gemini_call(client, model, prompt)
     if response.parsed is not None:
-        generated_qvs = {f'Q_{i}_{item.specificity}': item.query for i, item in enumerate(response.parsed.reformulations)}
+        generated_qvs = {f'Q_{i}': q for i, q in enumerate(response.parsed.reformulations)}
         return generated_qvs, True
     print("No parsed output from Gemini:", response.text)
     return response.text, False
@@ -236,7 +230,7 @@ def gen_kshot_qv_openai(client, model, qid: str, qText: str, _qv_df, _k, prompt_
     prompt = construct_kshot_prompt_structured(qText, get_examples(qid, _qv_df, _k), prompt_template)
     response = openai_call(client, model, prompt)
     if response.output_parsed is not None:
-        generated_qvs = {f'Q_{i}_{item.specificity}': item.query for i, item in enumerate(response.output_parsed.reformulations)}
+        generated_qvs = {f'Q_{i}': q for i, q in enumerate(response.output_parsed.reformulations)}
         return generated_qvs, True
     print("No parsed output from OpenAI:", response.output_text)
     return response.output_text, False
@@ -245,7 +239,7 @@ def gen_0shot_qv_openai(client, model, qText: str):
     prompt = construct_0shot_prompt_structured(qText)
     response = openai_call(client, model, prompt)
     if response.output_parsed is not None:
-        generated_qvs = {f'Q_{i}_{item.specificity}': item.query for i, item in enumerate(response.output_parsed.reformulations)}
+        generated_qvs = {f'Q_{i}': q for i, q in enumerate(response.output_parsed.reformulations)}
         return generated_qvs, True
     print("No parsed output from OpenAI:", response.output_text)
     return response.output_text, False
@@ -324,7 +318,7 @@ if __name__=="__main__":
     os.makedirs('./gen_qv_res', exist_ok=True)
 
     if(p == 0):
-        output_dir = f'./gen_qv_res/{dataset_name}_0shot_genspec_qvs'
+        output_dir = f'./gen_qv_res/{dataset_name}_0shot_paraphrase_qvs'
         path = Path(f'{output_dir}.json')
         if path.exists():
             print("File exists")
@@ -352,7 +346,7 @@ if __name__=="__main__":
             json.dump(qv_total_dict, f)
             
     else:
-        output_dir = f'./gen_qv_res/{dataset_name}_{p}shot_{hop_num}hop_{q_retriever}_genspec_qvs'
+        output_dir = f'./gen_qv_res/{dataset_name}_{p}shot_{hop_num}hop_{q_retriever}_paraphrase_qvs'
         path = Path(f'{output_dir}.json')
         if path.exists():
             print("File exists")

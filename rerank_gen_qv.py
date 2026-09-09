@@ -29,7 +29,7 @@ if __name__=="__main__":
     hop_num = args.hop_num
     p = args.p
 
-    output_dir = f'./qv_res/reranked_{dataset}_{p}shot_{q_rtr}_{hop_num}hop_genspec.csv'
+    output_dir = f'./qv_res/reranked_{dataset}_{p}shot_{q_rtr}_{hop_num}hop_paraphrase.csv'
     if Path(output_dir).exists():
         print("File exists", output_dir)
         raise RuntimeError("don't need to continue")
@@ -60,8 +60,8 @@ if __name__=="__main__":
     
     # >> dataset_obj.text_loader(["text"])
 
-    print("Reading QVs", f'./gen_qv_res/{dataset}_{p}shot_{hop_num}hop_{q_rtr}_genspec_qvs.json')
-    with open(f'./gen_qv_res/{dataset}_{p}shot_{hop_num}hop_{q_rtr}_genspec_qvs.json') as f:
+    print("Reading QVs", f'./gen_qv_res/{dataset}_{p}shot_{hop_num}hop_{q_rtr}_paraphrase_qvs.json')
+    with open(f'./gen_qv_res/{dataset}_{p}shot_{hop_num}hop_{q_rtr}_paraphrase_qvs.json') as f:
         unranked_qvs = json.load(f)
 
     print("converting to csv")
@@ -71,13 +71,10 @@ if __name__=="__main__":
         qText = details['query']
         # print(qid, qText)
         for i, (key, qv_details) in enumerate(details['gen_qvs'].items()):
-            key_suffix = key.rsplit('_', 1)[-1]
-            specificity = key_suffix if key_suffix in ('generic', 'specific') else None
-            qvs_res_content.append([qid, qText, f'{qid}_gen{i}', qv_details, specificity])
+            qvs_res_content.append([qid, qText, f'{qid}_gen{i}', qv_details])
 
     # print('[debug]--point 0')
-    qvs_res = pd.DataFrame(qvs_res_content, columns=['qid', 'qText', 'rqid', 'rqText', 'specificity'])
-    rqid_to_specificity = dict(zip(qvs_res['rqid'], qvs_res['specificity']))
+    qvs_res = pd.DataFrame(qvs_res_content, columns=['qid', 'qText', 'rqid', 'rqText'])
     print('[debug] start retrieving')
     qvs_rtr_res = 0
     for i in tqdm(range(0, qvs_res.shape[0], 5)):
@@ -107,10 +104,9 @@ if __name__=="__main__":
     
             rqText = res_11['query'].values[0]
             rbo_value = pta.rbo(res_0[res_0['rank']<20], res_11[res_11['rank']<20])
-            specificity = rqid_to_specificity.get(rqid)
-            qvs_rbo_rerank_df_content.append([qid, qText, rqid, rqText, list(rbo_value)[0][1], specificity])
+            qvs_rbo_rerank_df_content.append([qid, qText, rqid, rqText, list(rbo_value)[0][1]])
 
-    qvs_rbo_rerank_df = pd.DataFrame(qvs_rbo_rerank_df_content, columns=['qid', 'qText', 'rqid', 'rqText', 'score', 'specificity'])
+    qvs_rbo_rerank_df = pd.DataFrame(qvs_rbo_rerank_df_content, columns=['qid', 'qText', 'rqid', 'rqText', 'score'])
     qvs_rbo_rerank_df = add_ranks(qvs_rbo_rerank_df)
     qvs_rbo_rerank_df = qvs_rbo_rerank_df[qvs_rbo_rerank_df['rank']<10]
     qvs_rbo_rerank_df.to_csv(output_dir, index=False)
